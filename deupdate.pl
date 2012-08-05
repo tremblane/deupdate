@@ -7,8 +7,7 @@
 #  updates using the cdets findcr and fixcr commands. Also 
 #  checks to be sure new DE-mgr is added to project users.
 #
-# Usage: deupdate, deupdate -b (for bulk),
-#        deupdate -b -f <filename>
+# Usage: deupdate [-b [-f <filename]] [-p <project>]
 #
 # Author: jadew
 #
@@ -18,20 +17,183 @@
 #
 #################################################################
 
+use warnings;
+use strict;
+
 use Pod::Usage;
 use Getopt::Long;
+
+#magic numbers
+my $cdets_command = '/usr/cisco/bin/cdets';
+my $debug="0"; #set to 1 for debug messages, 0 for no messages
+
+#pre-declare stuff for 'use strict'
+my (
+	$bulk,
+	$filename,
+	$verbose1,
+	$verbose2,
+	$project
+);
+my $product;
+my $component;
+my $old_de_manager;
+my $query_string;
 
 GetOptions(
 	"--b|bulk" => \$bulk,
 	"--f|file=s" => \$filename,
 	"--m|man" => \$verbose2,
-	"--h|help" => \$verbose1
+	"--h|help" => \$verbose1,
+	"--p|project=s" => \$project
 ) or pod2usage( {'VERBOSE' => 0} );
 
 pod2usage( {'VERBOSE' => 1} ) if ( defined( $verbose1 ) );
 pod2usage( {'VERBOSE' => 2} ) if ( defined( $verbose2 ) );
 
+#Prompt for project if not given on the command line
+if (!(defined($project))) {
+	#Get the Project
+	print "Project: ";
+	$project = <STDIN>;
+	chomp($project);
+} else {
+	print "Project: $project\n";
+}
 
+#check for a valid CDETS project
+my $valid_project = qx($cdets_command -m Project | grep -w ^$project\$);
+chomp($valid_project);
+if (!($valid_project)) {
+	pod2usage( -msg => "Invalid project: $project", -verbose => 0);
+}
+print "valid_project: $valid_project\n" if $debug;
+
+
+#Check for special-case projects
+# put into a hash for ease of searching
+# set the value to the special product for the special project
+# (in case we run into a product other than 'all' in the future)
+my %special_projects;
+my $is_special_project;
+foreach (qw(CSC.labtrunk CSC.ena CSC.ena-fe CSC.sys CSC.autons)) { 
+	$special_projects{$_} = "all"; 
+	#using 'all' b/c 'all' is the special product in the special projects
+}
+if ( exists $special_projects{$project} ) {
+	$is_special_project = "true";
+} else {
+	$is_special_project = "false";
+}
+print "is_special_project: $is_special_project\n" if $debug;
+
+#if bulk update and if filename not given as option, get the filename
+if (defined($bulk)) {
+	if (!defined($filename)) {
+		print "Product/Component file: ";
+		$filename = <STDIN>;
+		chomp($filename);
+	} else {
+		print "Using Product/Component file: $filename\n";
+	}
+	#check that the file exists
+	if (!(-f $filename)) { pod2usage( -msg => "File does not exist: $filename", -verbose => 0); }
+	if (!(-r $filename)) { pod2usage( -msg => "File not readable: $filename", -verbose => 0); }
+} else {
+	#not bulk, so get the product and component
+	print "Product: ";
+	$product = <STDIN>;
+	chomp($product);
+	print "Component: ";
+	$component = <STDIN>;
+	chomp($component);
+
+	print "Product: $product\n" if $debug;
+	print "Component: $component\n" if $debug;
+}
+
+#Get the old DE-manager
+print "Old DE-manager (leave blank if none): ";
+$old_de_manager = <STDIN>;
+chomp($old_de_manager);
+print "Old DE-manager: $old_de_manager\n" if $debug;
+
+#get the new DE-manager
+print "New DE-manager: ";
+my $new_de_manager = <STDIN>;
+chomp($new_de_manager);
+print "New DE-manager: $new_de_manager\n" if $debug;
+
+#validate new DE manager is in Project Users
+my $valid_de_manager = qx(cdets -p $project DE-manager | grep ^$new_de_manager\$);
+chomp($valid_de_manager);
+print "Valid DE-manager: $valid_de_manager\n" if $debug;
+
+while (!($valid_de_manager)) {
+	print "\"$new_de_manager\" has not been added to \"$project\" project users. Please add via Project Administration.\n";
+	print "Hit Enter when completed: ";
+	<STDIN>;
+	#re-validate
+	$valid_de_manager = qx(cdets -p $project DE-manager | grep ^$new_de_manager\$);
+	chomp($valid_de_manager);
+	print "Valid DE-manager: $valid_de_manager\n" if $debug;
+}
+
+#Build query
+if (defined($bulk)) {
+	#Bulk update query
+	$query_string = "\"("; #starting double-quote
+	open FILE, "<", $filename or die $!;
+	while (my $line = <FILE>) {
+		if ($query_string ne "\"(") {
+			#if not the first time through, add the 'or'
+			$query_string .= " or ";
+		}
+		chomp($line);
+		(my $prod, my $comp) = split('/', $line);
+		#print "prod: $prod - comp: $comp\n" if $debug;
+		if (($is_special_project eq "true") and ($prod eq $special_projects{$project})) {
+			#special case, ignore product, search for component only
+			$query_string .= "([Component] = \'$comp\')";
+		} else {
+			$query_string .= "([Product] = '$prod' and [Component] = \'$comp\')";
+		}	
+	}
+} else {
+	#Single component update
+	$query_string = "\"([Product] = \'$product\' and [Component] = \'$component\'";
+}
+
+if ($old_de_manager ne '') {
+	$query_string = $query_string . ") and ([DE-manager] = \'$old_de_manager\')\"";
+} else {
+	$query_string = $query_string . ") and ([DE-manager] <> \'$new_de_manager\')\"";
+}
+
+print "query_string: $query_string\n" if $debug;
+
+#Run query
+my $results = qx(findcr -s NAOMIWHP -p $project $query_string);
+chomp($results);
+$results =~ s/\n//g;
+print "results: $results\n" if $debug;
+
+
+#Check query results
+print "Open bugs found:\n";
+print "$results\n";
+if ($results eq "No records were found that matched the search criteria") {
+	exit 0;
+}
+
+#If valid query results, update bugs
+print "Updating open bugs.\n";
+$results =~ s/ /,/g;
+print "Will run: fixcr -N -i $results DE-manager $new_de_manager\n" if $debug;
+my $fixcr_results = qx(fixcr -N -i $results DE-manager $new_de_manager);
+print "$fixcr_results\n";
+
+#pod usage
 __END__
 
 =pod
@@ -42,7 +204,7 @@ deupdate.pl - DE-manager update for CARETS generated cases
 
 =head1 SYNOPSIS
 
-deupdate.pl [-b [-f <filename>]]
+deupdate.pl [-b [-f <filename>]] [-p <project>]
 
 deupdate.pl { --help | --man }
 
@@ -56,7 +218,11 @@ Perform a bulk update
 
 =item B<-f,--file=FILENAME>
 
-Specify the file containing the product/component list. If -b is given but not the file, you will be prompted to enter one.
+The file containing the product/component list. If -b is given but not the file, you will be prompted to enter one. If FILENAME is given but not -b, FILENAME will be ignored.
+
+=item B<-p,--project=PROJECT>
+
+PROJECT is the CDETS project the update applies to. If -p is not given, you will be prompted to enter one.
 
 =head1 DESCRIPTION
 
