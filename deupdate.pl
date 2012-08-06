@@ -226,6 +226,6 @@ PROJECT is the CDETS project the update applies to. If -p is not given, you will
 
 =head1 DESCRIPTION
 
-Perform a DE-manager update in CDETS. To be used with cases ganerated from CARETS.
+Perform a DE-manager update in CDETS. To be used with cases generated from CARETS.
 
 =cut
