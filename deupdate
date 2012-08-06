@@ -1,7 +1,7 @@
 #!/usr/bin/perl 
 #
 ################################################################
-# Filename: deupdate.pl
+# Filename: deupdate
 #
 # Description: This script performs single and bulk DE-manager  
 #  updates using the cdets findcr and fixcr commands. Also 
@@ -200,13 +200,13 @@ __END__
 
 =head1 NAME
 
-deupdate.pl - DE-manager update for CARETS generated cases
+deupdate - DE-manager update for CARETS generated cases
 
 =head1 SYNOPSIS
 
-deupdate.pl [-b [-f <filename>]] [-p <project>]
+deupdate [-b [-f <filename>]] [-p <project>]
 
-deupdate.pl { --help | --man }
+deupdate { --help | --man }
 
 =head1 OPTIONS
 
