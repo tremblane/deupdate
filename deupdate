@@ -25,7 +25,7 @@ use Getopt::Long;
 
 #magic numbers
 my $cdets_command = '/usr/cisco/bin/cdets';
-my $debug="0"; #set to 1 for debug messages, 0 for no messages
+my $debug="1"; #set to 1 for debug messages, 0 for no messages
 
 #pre-declare stuff for 'use strict'
 my (
@@ -151,7 +151,9 @@ if (defined($bulk)) {
 		}
 		chomp($line);
 		(my $prod, my $comp) = split('/', $line);
-		#print "prod: $prod - comp: $comp\n" if $debug;
+		print "prod: $prod - comp: $comp\n" if $debug;
+		print "is_special_project: $is_special_project\n" if $debug;
+		print "special_projects{project} $special_projects{$project}\n" if $debug;
 		if (($is_special_project eq "true") and ($prod eq $special_projects{$project})) {
 			#special case, ignore product, search for component only
 			$query_string .= "([Component] = \'$comp\')";
@@ -161,7 +163,11 @@ if (defined($bulk)) {
 	}
 } else {
 	#Single component update
-	$query_string = "\"([Product] = \'$product\' and [Component] = \'$component\'";
+	if (($is_special_project eq "true") and ($product eq $special_projects{$project})) {
+		$query_string = "\"([Component] = \'$component\'";
+	} else {
+		$query_string = "\"([Product] = \'$product\' and [Component] = \'$component\'";
+	}
 }
 
 if ($old_de_manager ne '') {
@@ -171,6 +177,8 @@ if ($old_de_manager ne '') {
 }
 
 print "query_string: $query_string\n" if $debug;
+
+print "doing search: findcr -s NAOMIWHP -p $project $query_string\n" if $debug;
 
 #Run query
 my $results = qx(findcr -s NAOMIWHP -p $project $query_string);
@@ -189,9 +197,12 @@ if ($results eq "No records were found that matched the search criteria") {
 #If valid query results, update bugs
 print "Updating open bugs.\n";
 $results =~ s/ /,/g;
-print "Will run: fixcr -N -i $results DE-manager $new_de_manager\n" if $debug;
-my $fixcr_results = qx(fixcr -N -i $results DE-manager $new_de_manager);
-print "$fixcr_results\n";
+if ($debug) {
+	print "Will run: fixcr -N -i $results DE-manager $new_de_manager\n";
+} else {
+	my $fixcr_results = qx(fixcr -N -i $results DE-manager $new_de_manager);
+	print "$fixcr_results\n";
+}
 
 #pod usage
 __END__
