@@ -25,7 +25,7 @@ use Getopt::Long;
 
 #magic numbers
 my $cdets_command = '/usr/cisco/bin/cdets';
-my $debug="1"; #set to 1 for debug messages, 0 for no messages
+my $debug="0"; #set to 1 for debug messages, 0 for no messages
 
 #pre-declare stuff for 'use strict'
 my (
